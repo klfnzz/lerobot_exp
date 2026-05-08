@@ -1,31 +1,50 @@
 import time
 from dataclasses import dataclass
-from typing import Dict
+from typing import Any
 
-from piper_sdk import C_PiperInterface_V2
+from pyAgxArm import AgxArmFactory, ArmModel, PiperFW, create_agx_arm_config
 
 
 @dataclass
 class PiperMotorsBusConfig:
     can_name: str
     motors: dict[str, tuple[int, str]]
+    robot_model: str = ArmModel.PIPER
+    firmware_version: str = PiperFW.DEFAULT
+    interface: str = "socketcan"
+    bitrate: int = 1_000_000
+    gripper_force: float = 1.0
+    enable_check_can: bool = True
+
 
 class PiperMotorsBus:
     """
-        对Piper SDK的二次封装
+    pyAgxArm adapter used by the Piper leader/follower integrations.
+
+    The public LeRobot-facing API keeps joint values in SI-style units:
+    six arm joints in radians plus one gripper width in meters.
     """
-    def __init__(self, 
-                 config: PiperMotorsBusConfig):
-        self.piper = C_PiperInterface_V2(config.can_name)
-        self.piper.ConnectPort()
+
+    def __init__(self, config: PiperMotorsBusConfig):
+        self.config = config
         self.motors = config.motors
-        # 录制数据集时改成0
-        self.init_joint_position = [0.0, 0.0, 0.0, 0.0, 0.52, 0.0, 0.0] # [6 joints + 1 gripper] * 0.0
+        self.init_joint_position = [0.0, 0.0, 0.0, 0.0, 0.52, 0.0, 0.0]
         self.safe_disable_position = [0.0, 0.0, 0.0, 0.0, 0.52, 0.0, 0.0]
-        self.pose_factor = 1000 # 单位 0.001mm
-        self.joint_factor = 57324.840764 # 1000*180/3.14， rad -> 度（单位0.001度）
         self._is_connected = False
         self._is_calibrated = False
+        self._gripper = None
+
+        arm_config = create_agx_arm_config(
+            robot=config.robot_model,
+            firmeware_version=config.firmware_version,
+            interface=config.interface,
+            channel=config.can_name,
+            bitrate=config.bitrate,
+            enable_check_can=config.enable_check_can,
+            auto_connect=False,
+        )
+        self.piper = AgxArmFactory.create_arm(arm_config)
+        self._gripper = self.piper.init_effector(self.piper.OPTIONS.EFFECTOR.AGX_GRIPPER)
 
     @property
     def motor_names(self) -> list[str]:
@@ -41,138 +60,122 @@ class PiperMotorsBus:
 
     @property
     def is_connected(self) -> bool:
-        """检查是否已连接"""
         return self._is_connected
 
     @property
     def is_calibrated(self) -> bool:
-        """检查是否已标定"""
         return self._is_calibrated
 
-    def connect(self, enable:bool) -> bool:
-        '''
-            使能机械臂并检测使能状态,尝试5s,如果使能超时则退出程序
-        '''
-        enable_flag = False
-        loop_flag = False
-        # 设置超时时间（秒）
-        timeout = 5
-        # 记录进入循环前的时间
-        start_time = time.time()
-        while not (loop_flag):
-            elapsed_time = time.time() - start_time
-            print("--------------------")
-            enable_list = []
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status)
-            enable_list.append(self.piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status)
-            if(enable):
-                enable_flag = all(enable_list)
-                self.piper.EnableArm(7)
-                self.piper.GripperCtrl(0,1000,0x01, 0)
+    def _get_enable_status(self) -> list[bool]:
+        return list(self.piper.get_joints_enable_status_list())
+
+    def _wait_for_enable_state(self, enable: bool, timeout_s: float = 5.0) -> bool:
+        start_time = time.monotonic()
+        while time.monotonic() - start_time <= timeout_s:
+            enable_list = self._get_enable_status()
+            if enable_list and all(bool(status) == enable for status in enable_list):
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _set_enable_state(self, enable: bool, timeout_s: float = 5.0) -> bool:
+        start_time = time.monotonic()
+        while time.monotonic() - start_time <= timeout_s:
+            if enable:
+                self.piper.enable()
             else:
-                # move to safe disconnect position
-                enable_flag = any(enable_list)
-                self.piper.DisableArm(7)
-                self.piper.GripperCtrl(0,1000,0x02, 0)
-            print(f"使能状态: {enable_flag}")
-            print("--------------------")
-            if(enable_flag == enable):
-                loop_flag = True
-                enable_flag = True
-            else: 
-                loop_flag = False
-                enable_flag = False
-            # 检查是否超过超时时间
-            if elapsed_time > timeout:
-                print("超时....")
-                enable_flag = False
-                loop_flag = True
-                break
-            time.sleep(0.5)
-        resp = enable_flag
-        self._is_connected = resp if enable else False
-        print(f"Returning response: {resp}")
-        return resp
+                self.piper.disable()
+
+            if self._wait_for_enable_state(enable=enable, timeout_s=0.5):
+                return True
+
+        return False
+
+    def connect(self, enable: bool) -> bool:
+        """Connect/disconnect the CAN driver and enable/disable the Piper arm."""
+        if enable:
+            if not self.piper.is_connected():
+                self.piper.connect()
+            enabled = self._set_enable_state(enable=True)
+            if self._gripper is not None:
+                self._gripper.move_gripper_m(value=0.0, force=self.config.gripper_force)
+            self._is_connected = enabled
+            return enabled
+
+        if self.piper.is_connected():
+            if self._gripper is not None:
+                self._gripper.disable_gripper()
+            disabled = self._set_enable_state(enable=False)
+            self.piper.disconnect()
+        else:
+            disabled = True
+
+        self._is_connected = False
+        self._is_calibrated = False
+        return disabled
 
     def set_calibration(self):
         return
-    
+
     def revert_calibration(self):
         return
 
     def apply_calibration(self):
-        """
-            移动到初始位置
-        """
+        """Move to the configured initial position."""
         self.write(target_joint=self.init_joint_position)
         self._is_calibrated = True
 
     def apply_calibration_master(self):
-        """
-            master移动到初始位置
-        """
+        """Move the leader arm to the configured initial position."""
         self.write(target_joint=self.init_joint_position)
         self._is_calibrated = True
-        
 
-    def write(self, target_joint:list):
+    def write(self, target_joint: list[float]):
         """
-            Joint control
-            - target joint: in radians
-                joint_1 (float): 关节1角度 -92000 ~ 92000 / 57324.840764
-                joint_2 (float): 关节2角度 -2400 ~ 120000 / 57324.840764
-                joint_3 (float): 关节3角度 3000 ~ -110000 / 57324.840764
-                joint_4 (float): 关节4角度 -90000 ~ 90000 / 57324.840764
-                joint_5 (float): 关节5角度 80000 ~ -80000 / 57324.840764
-                joint_6 (float): 关节6角度 -90000 ~ 90000 / 57324.840764
-                gripper_range: 夹爪角度 0~0.08
-        """
-        joint_0 = round(target_joint[0]*self.joint_factor)
-        joint_1 = round(target_joint[1]*self.joint_factor)
-        joint_2 = round(target_joint[2]*self.joint_factor)
-        joint_3 = round(target_joint[3]*self.joint_factor)
-        joint_4 = round(target_joint[4]*self.joint_factor)
-        joint_5 = round(target_joint[5]*self.joint_factor)
-        gripper_range = round(target_joint[6]*1000*1000)
-        
-        self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
-        self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
-        self.piper.GripperCtrl(abs(gripper_range), 1000, 0x01, 0) # 单位 0.001°
+        Joint control.
 
-    def read(self) -> Dict:
+        Args:
+            target_joint: [joint_1..joint_6, gripper_width], with joints in
+                radians and gripper width in meters.
         """
-            - 机械臂关节消息,单位0.001度
-            - 机械臂夹爪消息
+        if len(target_joint) != 7:
+            raise ValueError(f"Expected 7 values ([6 joints + gripper]), got {len(target_joint)}.")
+        if not self.piper.is_connected():
+            raise ConnectionError("Piper arm is not connected.")
+
+        joints = [float(value) for value in target_joint[:6]]
+        gripper_width = max(0.0, float(target_joint[6]))
+
+        self.piper.move_j(joints)
+        if self._gripper is not None:
+            self._gripper.move_gripper_m(value=gripper_width, force=self.config.gripper_force)
+
+    def read(self) -> dict[str, float]:
         """
-        joint_msg = self.piper.GetArmJointMsgs()
-        joint_state = joint_msg.joint_state
+        Read current arm state.
 
-        gripper_msg = self.piper.GetArmGripperMsgs()
-        gripper_state = gripper_msg.gripper_state
+        Returns joints in radians and gripper width in meters.
+        """
+        joint_msg = self.piper.get_joint_angles()
+        if joint_msg is None:
+            raise RuntimeError("No Piper joint feedback has been received yet.")
 
-        return {
-            "joint_1": joint_state.joint_1,
-            "joint_2": joint_state.joint_2,
-            "joint_3": joint_state.joint_3,
-            "joint_4": joint_state.joint_4,
-            "joint_5": joint_state.joint_5,
-            "joint_6": joint_state.joint_6,
-            "gripper": gripper_state.grippers_angle
+        state: dict[str, float] = {
+            f"joint_{idx}": float(value) for idx, value in enumerate(joint_msg.msg, start=1)
         }
+        state["gripper"] = 0.0
 
+        if self._gripper is not None:
+            gripper_msg: Any = self._gripper.get_gripper_status()
+            if gripper_msg is not None and getattr(gripper_msg.msg, "mode", "width") == "width":
+                state["gripper"] = float(gripper_msg.msg.value)
+
+        return state
 
     def safe_disconnect(self):
-        """ 
-            Move to safe disconnect position
-        """
+        """Move to the configured safe disconnect position."""
         self.write(target_joint=self.safe_disable_position)
 
     def safe_disconnect_master(self):
-        """ 
-            Move to safe disconnect position
-        """
-        self.write_master(target_joint=self.safe_disable_position)
+        """Move the leader arm to the configured safe disconnect position."""
+        self.write(target_joint=self.safe_disable_position)

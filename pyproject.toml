@@ -88,6 +88,7 @@ dependencies = [
     "deepdiff>=7.0.1,<9.0.0",
     "imageio[ffmpeg]>=2.34.0,<3.0.0",
     "termcolor>=2.4.0,<4.0.0",
+    "pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git@57a95a8",
 ]
 
 # Optional dependencies
@@ -103,6 +104,7 @@ grpcio-dep = ["grpcio==1.73.1", "protobuf>=6.31.1,<6.32.0"]
 feetech = ["feetech-servo-sdk>=1.0.0,<2.0.0"]
 dynamixel = ["dynamixel-sdk>=3.7.31,<3.9.0"]
 damiao = ["python-can>=4.2.0,<5.0.0"]
+piper = ["pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git@57a95a8"]
 
 # Robots
 openarms = ["lerobot[damiao]"]

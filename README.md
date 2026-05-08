@@ -21,7 +21,7 @@
     👉 [lerobot_piper2](https://github.com/Kane1440/lerobot_piper2)
 
 * **Piper SDK**:  
-    👉 [Piper SDK](https://github.com/agilexrobotics/piper_sdk)
+    👉 [pyAgxArm](https://github.com/agilexrobotics/pyAgxArm)
     
 * **This repository**:  
     😋 **lerobot_piper3** (current, maintained, extended)
@@ -49,10 +49,11 @@ cd lerobot_piper3
 pip install -e .
 ```
 
-Make sure you have already installed **LeRobot** and **piper_sdk**:
+Make sure you have already installed **LeRobot** and **pyAgxArm**:
 
 ```bash
-pip install lerobot piper_sdk
+pip install lerobot
+pip install "pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git@57a95a8"
 ```
 
 * * *

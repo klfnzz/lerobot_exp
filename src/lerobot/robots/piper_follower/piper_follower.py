@@ -113,7 +113,8 @@ class PiperFollower(Robot):
                 "Piper is already connected. Do not run robot.connect() twice."
             )
 
-        self.bus.connect(enable=True)
+        if not self.bus.connect(enable=True):
+            raise ConnectionError("Failed to enable Piper follower.")
         print("piper follower connected")
 
         # connect cameras
