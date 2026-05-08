@@ -1,0 +1,34 @@
+# Local planning/session notes
+task_plan.md
+findings.md
+progress.md
+
+# Python/cache/build artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments and local package managers
+.venv/
+venv/
+env/
+Miniforge3-Linux-x86_64.sh
+
+# Generated data, logs, and experiment outputs
+outputs/
+data/
+logs/
+log/
+*.log
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

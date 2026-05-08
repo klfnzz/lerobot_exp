@@ -1,0 +1,24 @@
+[submodule "lerobot"]
+	path = lerobot
+	url = https://github.com/huggingface/lerobot.git
+[submodule "lerobot_piper3"]
+	path = lerobot_piper3
+	url = https://github.com/WilbertYuan/lerobot_piper3.git
+[submodule "piper/dual_piper"]
+	path = piper/dual_piper
+	url = https://github.com/agilexrobotics/dual_piper.git
+[submodule "piper/piper_isaac_sim"]
+	path = piper/piper_isaac_sim
+	url = https://github.com/agilexrobotics/piper_isaac_sim.git
+[submodule "piper/piper_ros"]
+	path = piper/piper_ros
+	url = https://github.com/agilexrobotics/piper_ros.git
+[submodule "piper/piper_sdk"]
+	path = piper/piper_sdk
+	url = https://github.com/agilexrobotics/piper_sdk.git
+[submodule "piper/pyAgxArm"]
+	path = piper/pyAgxArm
+	url = https://github.com/agilexrobotics/pyAgxArm.git
+[submodule "realsense/librealsense"]
+	path = realsense/librealsense
+	url = https://github.com/realsenseai/librealsense.git
