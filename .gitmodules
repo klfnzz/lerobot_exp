@@ -3,7 +3,8 @@
 	url = https://github.com/huggingface/lerobot.git
 [submodule "lerobot_piper3"]
 	path = lerobot_piper3
-	url = https://github.com/WilbertYuan/lerobot_piper3.git
+	url = https://github.com/klfnzz/lerobot_exp.git
+	branch = lerobot_piper3-main
 [submodule "piper/dual_piper"]
 	path = piper/dual_piper
 	url = https://github.com/agilexrobotics/dual_piper.git
